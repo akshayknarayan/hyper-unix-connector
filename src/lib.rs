@@ -130,3 +130,23 @@ impl hyper::client::connect::Connect for UnixClient {
         })
     }
 }
+
+impl hyper::client::service::Service<hyper::Uri> for UnixClient {
+    type Response = tokio::net::UnixStream;
+    type Error = Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, uri: hyper::Uri) -> Self::Future {
+        Box::pin(async move {
+            let dest = hyper::client::connect::Destination::try_from_uri(uri)?;
+            use hyper::client::connect::Connect;
+            let u = UnixClient;
+            let (uc, _) = u.connect(dest).await?;
+            Ok(uc)
+        })
+    }
+}
