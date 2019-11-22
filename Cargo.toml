@@ -1,6 +1,6 @@
 [package]
 name = "hyper-unix-connector"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 edition = "2018"
 description = "Use hyper with unix-domain sockets"
@@ -13,5 +13,4 @@ hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
 failure = "0.1"
 tokio = "=0.2.0-alpha.6"
 futures-util-preview = "0.3.0-alpha.19"
-hyperlocal = "0.6"
 hex = "0.4"
