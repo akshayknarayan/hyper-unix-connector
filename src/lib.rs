@@ -2,6 +2,8 @@
 //!
 //! Most of this crate's functionality is borrowed from [hyperlocal](https://github.com/softprops/hyperlocal).
 //! This crate supports async/await, while hyperlocal does not (yet).
+//!
+//! See [`UnixClient`] and [`UnixConnector`] for examples.
 
 use core::{
     pin::Pin,
@@ -15,7 +17,7 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::path::Path;
 
-/// A type which implements `Into` for hyper's  `hyper::Uri` type
+/// A type which implements `Into` for hyper's  [`hyper::Uri`] type
 /// targetting unix domain sockets.
 ///
 /// You can use this with any of
@@ -134,7 +136,7 @@ impl hyper::server::accept::Accept for UnixConnector {
     }
 }
 
-/// Converts [`hyper_unix_connector::Uri`] to [`tokio::net::UnixStream`].
+/// Converts [`Uri`] to [`tokio::net::UnixStream`].
 ///
 /// Useful for making [`hyper`] clients connect to Unix-domain addresses. For the server side, see
 /// [`UnixConnector`].
