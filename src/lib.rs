@@ -104,6 +104,7 @@ impl<'a> Uri<'a> {
 /// }));
 /// # std::fs::remove_file("./my-unix-socket").unwrap_or_else(|_| ());
 /// ```
+#[derive(Debug)]
 pub struct UnixConnector(tokio::net::UnixListener);
 
 impl From<tokio::net::UnixListener> for UnixConnector {
@@ -150,6 +151,7 @@ impl hyper::server::accept::Accept for UnixConnector {
 /// let addr: hyper::Uri = Uri::new("./my_unix_socket", "/").into();
 /// client.get(addr);
 /// ```
+#[derive(Clone, Copy, Debug)]
 pub struct UnixClient;
 
 impl hyper::client::connect::Connect for UnixClient {
