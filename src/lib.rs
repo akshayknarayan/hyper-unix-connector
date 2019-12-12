@@ -10,9 +10,9 @@ use core::{
     task::{Context, Poll},
 };
 use failure::Error;
-use futures_util::future::FutureExt;
-use futures_util::try_future::TryFutureExt;
+use futures_util::future::{FutureExt, TryFutureExt};
 use hex::FromHex;
+use pin_project::pin_project;
 use std::borrow::Cow;
 use std::future::Future;
 use std::path::Path;
@@ -71,13 +71,6 @@ impl<'a> Uri<'a> {
             })
             .next()
     }
-
-    fn socket_path_dest(dest: &hyper::client::connect::Destination) -> Option<String> {
-        format!("unix://{}", dest.host())
-            .parse()
-            .ok()
-            .and_then(|uri| Self::socket_path(&uri))
-    }
 }
 
 /// Wrapper around [`tokio::net::UnixListener`] that works with [`hyper`] servers.
@@ -88,6 +81,8 @@ impl<'a> Uri<'a> {
 /// # Example
 /// ```rust
 /// # std::fs::remove_file("./my-unix-socket").unwrap_or_else(|_| ());
+/// # let mut rt = tokio::runtime::Runtime::new().unwrap();
+/// # rt.block_on(async {
 /// use hyper::service::{make_service_fn, service_fn};
 /// use hyper::{Body, Error, Response, Server};
 /// use hyper_unix_connector::UnixConnector;
@@ -102,6 +97,7 @@ impl<'a> Uri<'a> {
 ///         }))
 ///     }
 /// }));
+/// # });
 /// # std::fs::remove_file("./my-unix-socket").unwrap_or_else(|_| ());
 /// ```
 #[derive(Debug)]
@@ -137,6 +133,42 @@ impl hyper::server::accept::Accept for UnixConnector {
     }
 }
 
+/// Newtype for [`tokio::net::UnixStream`] so that it can work with hyper's `Client`.
+#[pin_project]
+#[derive(Debug)]
+pub struct UDS(#[pin] tokio::net::UnixStream);
+
+impl From<tokio::net::UnixStream> for UDS {
+    fn from(f: tokio::net::UnixStream) -> Self {
+        Self(f)
+    }
+}
+
+impl Into<tokio::net::UnixStream> for UDS {
+    fn into(self) -> tokio::net::UnixStream {
+        self.0
+    }
+}
+
+macro_rules! conn_impl_fn {
+    ($fn: ident |$first_var: ident: $first_typ: ty, $($var: ident: $typ: ty),*| -> $ret: ty ;;) => {
+        fn $fn ($first_var: $first_typ, $( $var: $typ ),* ) -> $ret {
+            let ux: Pin<&mut tokio::net::UnixStream> = $first_var.project().0;
+            ux.$fn($($var),*)
+        }
+    };
+}
+
+impl tokio::io::AsyncRead for UDS {
+    conn_impl_fn!(poll_read |self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]| -> Poll<std::io::Result<usize>> ;;);
+}
+
+impl tokio::io::AsyncWrite for UDS {
+    conn_impl_fn!(poll_write    |self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]| -> Poll<std::io::Result<usize>> ;;);
+    conn_impl_fn!(poll_flush    |self: Pin<&mut Self>, cx: &mut Context<'_>| -> Poll<std::io::Result<()>> ;;);
+    conn_impl_fn!(poll_shutdown |self: Pin<&mut Self>, cx: &mut Context<'_>| -> Poll<std::io::Result<()>> ;;);
+}
+
 /// Converts [`Uri`] to [`tokio::net::UnixStream`].
 ///
 /// Useful for making [`hyper`] clients connect to Unix-domain addresses. For the server side, see
@@ -154,36 +186,8 @@ impl hyper::server::accept::Accept for UnixConnector {
 #[derive(Clone, Copy, Debug)]
 pub struct UnixClient;
 
-impl hyper::client::connect::Connect for UnixClient {
-    type Transport = tokio::net::UnixStream;
-    type Error = Error;
-    type Future = Pin<
-        Box<
-            dyn Future<Output = Result<(Self::Transport, hyper::client::connect::Connected), Error>>
-                + Send,
-        >,
-    >;
-
-    fn connect(&self, dst: hyper::client::connect::Destination) -> Self::Future {
-        Box::pin(async move {
-            if dst.scheme() != "unix" {
-                return Err(failure::format_err!("Invalid uri {:?}", dst));
-            }
-
-            let path = match Uri::socket_path_dest(&dst) {
-                Some(path) => path,
-
-                None => return Err(failure::format_err!("Invalid uri {:?}", dst)),
-            };
-
-            let st = tokio::net::UnixStream::connect(&path).await?;
-            Ok((st, hyper::client::connect::Connected::new()))
-        })
-    }
-}
-
-impl hyper::client::service::Service<hyper::Uri> for UnixClient {
-    type Response = tokio::net::UnixStream;
+impl hyper::service::Service<hyper::Uri> for UnixClient {
+    type Response = UDS;
     type Error = Error;
     type Future =
         Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
@@ -192,21 +196,36 @@ impl hyper::client::service::Service<hyper::Uri> for UnixClient {
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, uri: hyper::Uri) -> Self::Future {
+    fn call(&mut self, dst: hyper::Uri) -> Self::Future {
         Box::pin(async move {
-            let dest = hyper::client::connect::Destination::try_from_uri(uri)?;
-            use hyper::client::connect::Connect;
-            let u = UnixClient;
-            let (uc, _) = u.connect(dest).await?;
-            Ok(uc)
+            match dst.scheme_str() {
+                Some("unix") => (),
+                _ => return Err(failure::format_err!("Invalid uri {:?}", dst)),
+            }
+
+            let path = match Uri::socket_path(&dst) {
+                Some(path) => path,
+
+                None => return Err(failure::format_err!("Invalid uri {:?}", dst)),
+            };
+
+            let st = tokio::net::UnixStream::connect(&path).await?;
+            Ok(st.into())
         })
+    }
+}
+
+impl hyper::client::connect::Connection for UDS {
+    fn connected(&self) -> hyper::client::connect::Connected {
+        hyper::client::connect::Connected::new()
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{UnixClient, UnixConnector, Uri};
-    use futures_util::try_stream::TryStreamExt;
+    use failure::ResultExt;
+    use futures_util::stream::{StreamExt, TryStreamExt};
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Client, Error, Response, Server};
 
@@ -217,23 +236,23 @@ mod test {
 
         std::fs::remove_file(TEST_UNIX_ADDR).unwrap_or_else(|_| ());
 
-        // server
-        let uc: UnixConnector = tokio::net::UnixListener::bind(TEST_UNIX_ADDR)
-            .unwrap()
-            .into();
-        let srv_fut = Server::builder(uc).serve(make_service_fn(|_| {
-            async move {
-                Ok::<_, Error>(service_fn(|_| {
-                    async move { Ok::<_, Error>(Response::new(Body::from(PING_RESPONSE))) }
-                }))
-            }
-        }));
+        let mut rt = tokio::runtime::Runtime::new().context("Could not make tokio runtime")?;
+        rt.block_on(async {
+            // server
+            let uc: UnixConnector = tokio::net::UnixListener::bind(TEST_UNIX_ADDR)
+                .expect("bind unixlistener")
+                .into();
+            let srv_fut = Server::builder(uc).serve(make_service_fn(|_| {
+                async move {
+                    Ok::<_, Error>(service_fn(|_| {
+                        async move { Ok::<_, Error>(Response::new(Body::from(PING_RESPONSE))) }
+                    }))
+                }
+            }));
 
-        // client
-        let client: Client<UnixClient, Body> = Client::builder().build(UnixClient);
+            // client
+            let client: Client<UnixClient, Body> = Client::builder().build(UnixClient);
 
-        let mut rt = tokio::runtime::current_thread::Runtime::new()?;
-        let resp = rt.block_on(async move {
             tokio::spawn(async move {
                 if let Err(e) = srv_fut.await {
                     panic!(e);
@@ -242,11 +261,15 @@ mod test {
 
             let addr: hyper::Uri = Uri::new(TEST_UNIX_ADDR, "/").into();
             let body = client.get(addr).await.unwrap().into_body();
-            let payload: hyper::Chunk = body.try_concat().await.unwrap();
-            String::from_utf8(payload.to_vec()).expect("body utf8")
+            let payload: Vec<u8> = body
+                .map(|b| b.map(|v| v.to_vec()))
+                .try_concat()
+                .await
+                .unwrap();
+            let resp = String::from_utf8(payload).expect("body utf8");
+            assert_eq!(resp, PING_RESPONSE);
         });
 
-        assert_eq!(resp, PING_RESPONSE);
         std::fs::remove_file(TEST_UNIX_ADDR).unwrap_or_else(|_| ());
 
         Ok(())

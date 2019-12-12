@@ -1,6 +1,6 @@
 [package]
 name = "hyper-unix-connector"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 edition = "2018"
 description = "Use hyper with unix-domain sockets"
@@ -9,8 +9,9 @@ repository = "https://github.com/akshayknarayan/hyper-unix-connector"
 license = "ISC"
 
 [dependencies]
-hyper = { version = "0.13.0-alpha.4", features = ["unstable-stream"] }
 failure = "0.1"
-tokio = "=0.2.0-alpha.6"
-futures-util-preview = "0.3.0-alpha.19"
+futures-util = "0.3.1"
 hex = "0.4"
+hyper = { version = "0.13", features = ["stream"] }
+tokio = { version = "0.2", features = ["uds"] }
+pin-project = "0.4"
