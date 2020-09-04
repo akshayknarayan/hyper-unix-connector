@@ -5,11 +5,11 @@
 //!
 //! See [`UnixClient`] and [`UnixConnector`] for examples.
 
+use anyhow::{anyhow, Error};
 use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use failure::Error;
 use futures_util::future::{FutureExt, TryFutureExt};
 use hex::FromHex;
 use pin_project::pin_project;
@@ -200,13 +200,13 @@ impl hyper::service::Service<hyper::Uri> for UnixClient {
         Box::pin(async move {
             match dst.scheme_str() {
                 Some("unix") => (),
-                _ => return Err(failure::format_err!("Invalid uri {:?}", dst)),
+                _ => return Err(anyhow!("Invalid uri {:?}", dst)),
             }
 
             let path = match Uri::socket_path(&dst) {
                 Some(path) => path,
 
-                None => return Err(failure::format_err!("Invalid uri {:?}", dst)),
+                None => return Err(anyhow!("Invalid uri {:?}", dst)),
             };
 
             let st = tokio::net::UnixStream::connect(&path).await?;
@@ -224,30 +224,27 @@ impl hyper::client::connect::Connection for UDS {
 #[cfg(test)]
 mod test {
     use crate::{UnixClient, UnixConnector, Uri};
-    use failure::ResultExt;
     use futures_util::stream::{StreamExt, TryStreamExt};
     use hyper::service::{make_service_fn, service_fn};
     use hyper::{Body, Client, Error, Response, Server};
 
     #[test]
-    fn ping() -> Result<(), failure::Error> {
+    fn ping() -> Result<(), anyhow::Error> {
         const PING_RESPONSE: &str = "Hello, World";
         const TEST_UNIX_ADDR: &str = "my-unix-socket";
 
         std::fs::remove_file(TEST_UNIX_ADDR).unwrap_or_else(|_| ());
 
-        let mut rt = tokio::runtime::Runtime::new().context("Could not make tokio runtime")?;
+        let mut rt = tokio::runtime::Runtime::new()?;
         rt.block_on(async {
             // server
             let uc: UnixConnector = tokio::net::UnixListener::bind(TEST_UNIX_ADDR)
                 .expect("bind unixlistener")
                 .into();
-            let srv_fut = Server::builder(uc).serve(make_service_fn(|_| {
-                async move {
-                    Ok::<_, Error>(service_fn(|_| {
-                        async move { Ok::<_, Error>(Response::new(Body::from(PING_RESPONSE))) }
-                    }))
-                }
+            let srv_fut = Server::builder(uc).serve(make_service_fn(|_| async move {
+                Ok::<_, Error>(service_fn(|_| async move {
+                    Ok::<_, Error>(Response::new(Body::from(PING_RESPONSE)))
+                }))
             }));
 
             // client
