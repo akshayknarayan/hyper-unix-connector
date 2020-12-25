@@ -10,8 +10,8 @@ license = "ISC"
 
 [dependencies]
 anyhow = "1.0"
-futures-util = "0.3.1"
+futures-util = "0.3"
 hex = "0.4"
-hyper = { version = "0.13", features = ["stream"] }
-tokio = { version = "0.2", features = ["uds"] }
-pin-project = "0.4"
+hyper = { version = "0.14", features = ["full"] }
+tokio = { version = "1.0", features = ["net", "rt-multi-thread"] }
+pin-project = "1.0"
