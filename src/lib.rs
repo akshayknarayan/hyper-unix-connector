@@ -127,7 +127,7 @@ impl hyper::server::accept::Accept for UnixConnector {
             .poll_accept(cx)
             .map_ok(|(stream, _addr)| stream)
             .map_err(|e| e.into())
-            .map(|f| Some(f))
+            .map(Some)
     }
 }
 
