@@ -10,12 +10,12 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use futures_util::future::{FutureExt, TryFutureExt};
 use hex::FromHex;
 use pin_project::pin_project;
 use std::borrow::Cow;
 use std::future::Future;
 use std::path::Path;
+use tokio::io::ReadBuf;
 
 /// A type which implements `Into` for hyper's  [`hyper::Uri`] type
 /// targetting unix domain sockets.
@@ -120,16 +120,14 @@ impl hyper::server::accept::Accept for UnixConnector {
     type Error = Error;
 
     fn poll_accept(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context,
     ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        let fut = self
-            .0
-            .accept()
+        self.0
+            .poll_accept(cx)
             .map_ok(|(stream, _addr)| stream)
             .map_err(|e| e.into())
-            .map(|f| Some(f));
-        Future::poll(Box::pin(fut).as_mut(), cx)
+            .map(|f| Some(f))
     }
 }
 
@@ -160,7 +158,7 @@ macro_rules! conn_impl_fn {
 }
 
 impl tokio::io::AsyncRead for UDS {
-    conn_impl_fn!(poll_read |self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]| -> Poll<std::io::Result<usize>> ;;);
+    conn_impl_fn!(poll_read |self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>| -> Poll<std::io::Result<()>> ;;);
 }
 
 impl tokio::io::AsyncWrite for UDS {
@@ -235,7 +233,9 @@ mod test {
 
         std::fs::remove_file(TEST_UNIX_ADDR).unwrap_or_else(|_| ());
 
-        let mut rt = tokio::runtime::Runtime::new()?;
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
         rt.block_on(async {
             // server
             let uc: UnixConnector = tokio::net::UnixListener::bind(TEST_UNIX_ADDR)
