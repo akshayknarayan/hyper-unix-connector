@@ -12,10 +12,10 @@ license = "ISC"
 anyhow = "1.0"
 hex = "0.4"
 hyper = { version = "0.14", features = ["client", "server", "http1"] }
-tokio = { version = "1.0", features = ["net"] }
 pin-project = "1.0"
+tokio = { version = "1.0", features = ["net"] }
 
 [dev-dependencies]
 futures-util = "0.3"
-hyper = { version = "0.14", features = ["stream"] }
+hyper = { version = "0.14", features = ["runtime", "stream"] }
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
