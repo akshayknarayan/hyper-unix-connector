@@ -10,8 +10,12 @@ license = "ISC"
 
 [dependencies]
 anyhow = "1.0"
-futures-util = "0.3"
 hex = "0.4"
-hyper = { version = "0.14", features = ["full"] }
-tokio = { version = "1.0", features = ["net", "rt-multi-thread"] }
+hyper = { version = "0.14", features = ["client", "server", "http1"] }
 pin-project = "1.0"
+tokio = { version = "1.0", features = ["net"] }
+
+[dev-dependencies]
+futures-util = "0.3"
+hyper = { version = "0.14", features = ["runtime", "stream"] }
+tokio = { version = "1.0", features = ["rt-multi-thread"] }
