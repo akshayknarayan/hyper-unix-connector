@@ -1,6 +1,6 @@
 [package]
 name = "hyper-unix-connector"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Akshay Narayan <akshayn@mit.edu>"]
 edition = "2018"
 description = "Use hyper with unix-domain sockets"
