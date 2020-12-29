@@ -11,11 +11,11 @@ license = "ISC"
 [dependencies]
 anyhow = "1.0"
 hex = "0.4"
-hyper = { version = "0.14", features = ["client", "server", "http1"] }
+hyper = { version = "0.14.2", features = ["client", "server"] }
 pin-project = "1.0"
 tokio = { version = "1.0", features = ["net"] }
 
 [dev-dependencies]
 futures-util = "0.3"
-hyper = { version = "0.14", features = ["runtime", "stream"] }
+hyper = { version = "0.14", features = ["runtime", "stream", "http1"] }
 tokio = { version = "1.0", features = ["rt-multi-thread"] }
